@@ -1,5 +1,7 @@
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { spawn } = require('child_process');
 
 const UUID = process.env.UUID;
@@ -23,14 +25,16 @@ const CFG = {
   outbounds: [{ protocol: 'freedom', tag: 'direct' }]
 };
 
-fs.writeFileSync('config.json', JSON.stringify(CFG));
-const x = spawn(BIN, ['run', '-c', 'config.json'], { stdio: 'inherit' });
+// Pxxl runtime filesystem is read-only except the temp dir:
+// write the generated xray config to os.tmpdir() instead of the app dir.
+const CFG_PATH = path.join(os.tmpdir(), 'config.json');
+fs.writeFileSync(CFG_PATH, JSON.stringify(CFG));
+const x = spawn(BIN, ['run', '-c', CFG_PATH], { stdio: 'inherit' });
 x.on('error', (e) => { console.error('xray spawn failed:', e.message); process.exit(1); });
 
 http.createServer((req, res) => {
   if (req.url === '/') return res.end(README);
   if (req.url !== WSPATH) return res.writeHead(404).end('not found');
-  const ws = spawn('sh', ['-c', 'exec python3 -m websockets --help >/dev/null 2>&1']); // placeholder (no-op)
   // Xray serves VLESS over WS at http://127.0.0.1:10086${WSPATH}; proxy Upgrade requests to it.
   const u = 'http://127.0.0.1:10086' + WSPATH;
   const proxy = http.request(u, {
